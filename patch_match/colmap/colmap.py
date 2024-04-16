@@ -1,0 +1,3 @@
+import pycolmap
+
+pycolmap.patchmatch()

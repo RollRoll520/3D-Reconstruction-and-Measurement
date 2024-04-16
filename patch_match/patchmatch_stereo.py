@@ -1,5 +1,6 @@
 from functools import wraps
 from abc import abstractmethod
+import os
 import time
 import json
 import random
@@ -606,10 +607,20 @@ class PatchMatchStereo:
 
 if __name__ == "__main__":
     import cv2
+    script_path = os.path.dirname(os.path.abspath(__file__))
 
-    left = cv2.imread("images/pms_0_left.png")
-    right = cv2.imread("images/pms_0_right.png")
-    config_ = PMSConfig("config.json")
+    # 相对于当前脚本文件的文件名
+    left_filename = "images/pms_0_left.png"
+    right_filename = "images/pms_0_right.png"
+    config_filename = "config.json"
+
+    # 组合生成相对路径的绝对路径
+    left_path = os.path.join(script_path, left_filename)
+    right_path = os.path.join(script_path, right_filename)
+    config_path = os.path.join(script_path, config_filename)
+    left = cv2.imread(left_path)
+    right = cv2.imread(right_path)
+    config_ = PMSConfig(config_path)
 
     height_, width_ = left.shape[0], left.shape[1]
     p = PatchMatchStereo(height=height_, width=width_, config=config_)

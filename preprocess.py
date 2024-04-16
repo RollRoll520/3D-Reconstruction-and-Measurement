@@ -1,13 +1,11 @@
 # preprocess command:
 # python dataset\preprocess.py --config configs/fr1_desk.yaml
-import sys
-sys.path.append('D:\Knowledge\Graduation_Design\WorkSpace\Py_WorkPlace')
 import os
 import math
 import shutil
 import numpy as np
 import argparse
-from tum_rgbd import get_calib
+from dataset.tum_rgbd import get_calib
 from kinfu.utils import load_config
 
 

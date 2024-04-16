@@ -39,5 +39,6 @@ def get_time():
     """
     :return: get timing statistics
     """
-    torch.cuda.synchronize()
+    # cpu-only mode
+    # torch.cuda.synchronize()
     return time.time()

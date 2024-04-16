@@ -6,6 +6,6 @@ __pycache__/
 render/
 reconstruct/
 .vscode/
-Resource/
+resource/
 data/
 temp/

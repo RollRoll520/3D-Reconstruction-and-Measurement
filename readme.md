@@ -21,6 +21,7 @@ To obtain the open-source dataset, you can download it from [TUM dataset](https:
 
 ```cmd
 python dataset/preprocess.py --config configs/fr1_desk.yaml
+python dataset/preprocess.py --config configs/fr1_metallic_sphere.yaml
 ```
 
 ### Run Kinect Fusion
@@ -30,7 +31,8 @@ After obtaining the processed sequence,you can simply run kinfu.py,**which will 
 For example:
 
 ```cmd
-python dataset/preprocess.py --config configs/fr1_desk.yaml
+python kinfu.py --config configs/fr1_desk.yaml --save_dir reconstruct/fr1_desk
+python kinfu.py --config configs/fr1_metallic_sphere.yaml --save_dir reconstruct/fr1_metallic_sphere
 ```
 
  Or if you want to visualize the tracking and reconstruction process on-the-fly.

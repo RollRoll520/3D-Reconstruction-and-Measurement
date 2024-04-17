@@ -1,22 +1,21 @@
 import numpy as np
-from scipy.spatial import ConvexHull
 import open3d as o3d
-import slice
-from env import reconstructed_file_env
 
 
 # 距离计算
 def calculate_distance(point1, point2):
     return np.sqrt(np.sum((point1 - point2) ** 2))
 
+
 # 双向最近点搜索法进行轮廓提取
 def extract_contour(points, radius):
     contour = []
     starting_point = points[0]  # 假设起点为第一个点
     current_point = starting_point
-    contour.append(current_point)
+    max_iterations = len(points)  # 设置最大迭代次数，避免死循环
+    iterations = 0  # 迭代计数器
 
-    while True:
+    while iterations < max_iterations:
         min_distance = float('inf')
         nearest_point = None
 
@@ -98,38 +97,3 @@ def get_max_height(points):
     np_points = np.asarray(points.points)  # Convert Open3D PointCloud to NumPy array
     max_height = np.max(np_points[:, 2])  # Get the maximum height from the Z coordinate
     return max_height
-
-filename = reconstructed_file_env
-point_cloud = o3d.io.read_point_cloud(filename)
-max_height = get_max_height(point_cloud)
-height = 0
-thickness = 0.2
-radius = 0.5
-volume = 0
-vis = o3d.visualization.Visualizer()
-vis.create_window()
-
-while height < max_height:
-    _, _, _, reconstructed_intersection_points = slice.slice_ply(filename, height, thickness)
-    
-    contour, temp = contour_compute(reconstructed_intersection_points, thickness, radius)
-    volume += temp
-    height += thickness
-
-    # 创建Open3D点云对象
-    point_cloud = o3d.geometry.PointCloud()
-    point_cloud.points=o3d.utility.Vector3dVector(reconstructed_intersection_points)
-    # 创建Open3D线集对象表示轮廓
-    line =  o3d.geometry.PointCloud()
-    line.points =o3d.utility.Vector3dVector(contour)
-
-    vis.add_geometry(point_cloud)
-    vis.add_geometry(line)
-
-    vis.poll_events()
-    vis.update_renderer()
-
-vis.run()
-vis.destroy_window()
-
-print(f"the volume of {filename} is {volume}")

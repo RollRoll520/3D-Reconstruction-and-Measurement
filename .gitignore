@@ -9,3 +9,4 @@ reconstruct/
 resource/
 data/
 temp/
+env.py

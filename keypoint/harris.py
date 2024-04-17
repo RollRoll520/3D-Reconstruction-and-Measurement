@@ -1,6 +1,7 @@
 import open3d as o3d
 import numpy as np
 import time
+from env import reconstructed_file_env
 
 # This function is only used to make the keypoints look better on the rendering
 def keypoints_to_spheres(keypoints):
@@ -52,4 +53,4 @@ def harris(filename):
     o3d.visualization.draw_geometries([keypoints_to_spheres(keypoints), pcd])
 
 #示例代码
-harris(r'D:\Knowledge\Graduation_Design\WorkSpace\Py_WorkPlace\reconstruct\fr1_cam\mesh.ply')
+harris(reconstructed_file_env)

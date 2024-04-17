@@ -2,6 +2,7 @@ from matplotlib import pyplot as plt
 import open3d as o3d
 import numpy as np
 import slice
+from env import reconstructed_file_env,standard_ply_file_env
 
 # 将切片平面内的点转换为极坐标
 def cartesian_to_polar(points):
@@ -63,6 +64,6 @@ def compute_interpolation(filename, standard_filename, slice_height, slice_thick
     o3d.visualization.draw_geometries([reconstructed_interp_cloud])
 
 
-reconstruction_ply = r'D:\Knowledge\Graduation_Design\WorkSpace\Py_WorkPlace\reconstruct\fr1_cam\mesh.ply'
-standard_ply = r'D:\Knowledge\Graduation_Design\WorkSpace\Py_WorkPlace\reconstruct\fr1_cam\mesh.ply'
+reconstruction_ply = reconstructed_file_env
+standard_ply =standard_ply_file_env
 compute_interpolation(reconstruction_ply, standard_ply, 1.0, 0.2)

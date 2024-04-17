@@ -2,6 +2,7 @@ import numpy as np
 from scipy.spatial import ConvexHull
 import open3d as o3d
 import slice
+from env import reconstructed_file_env
 
 
 # 距离计算
@@ -98,7 +99,7 @@ def get_max_height(points):
     max_height = np.max(np_points[:, 2])  # Get the maximum height from the Z coordinate
     return max_height
 
-filename = r'D:\Knowledge\Graduation_Design\WorkSpace\Py_WorkPlace\reconstruct\fr1_cam\mesh.ply'
+filename = reconstructed_file_env
 point_cloud = o3d.io.read_point_cloud(filename)
 max_height = get_max_height(point_cloud)
 height = 0

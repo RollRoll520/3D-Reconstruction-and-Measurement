@@ -1,6 +1,7 @@
 import open3d as o3d
 import numpy as np
 import torch
+from env import reconstructed_file_env
 
 def slice_point_cloud(point_cloud,slice_height, slice_thickness):
     # 获取点云的最小边界框
@@ -139,7 +140,7 @@ def slice_ply(filename,slice_height,slice_thickness):
 
 # #接口样例
 # # torch.cuda.synchronize()
-# validated_points_left,validated_points_right,merged_lines,intersection_points = slice_ply(r'D:\Knowledge\Graduation_Design\WorkSpace\Py_WorkPlace\reconstruct\fr1_cam\mesh.ply',1.0,0.2)
+# validated_points_left,validated_points_right,merged_lines,intersection_points = slice_ply(reconstructed_file_env)
 
 # # 可视化切片后的点云
 # intersection_cloud = o3d.geometry.PointCloud()

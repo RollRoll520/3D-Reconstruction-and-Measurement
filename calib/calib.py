@@ -5,11 +5,12 @@ from pykinect_azure import *
 from calib_extrinsic import *
 import calib_k4a
 from pykinect_azure.k4a import _k4a as k4a
+from env import mkv1_file_env,mkv2_file_env
 
 
 def main() -> int:
-    filePaths:List[str] = ["D:\Knowledge\Graduation_Design\WorkSpace\Py_WorkPlace\Resource\Collect.mkv",
-                           "D:\Knowledge\Graduation_Design\WorkSpace\Py_WorkPlace\Resource\Collect2.mkv"]
+    filePaths:List[str] = [mkv1_file_env,
+                           mkv2_file_env]
 
 
     file_count = len(filePaths) - 1

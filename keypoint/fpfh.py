@@ -1,4 +1,3 @@
-#FPFH.py
 import open3d as o3d
 import os
 import numpy as np
@@ -10,6 +9,7 @@ from sklearn.neighbors import KDTree # KDTree 进行搜索
 import random
 from iss import  iss,Point_Cloud_Show          #  iss feature detection
 from pandas import DataFrame
+#ToDo:FPFH.py
 
 def visual_feature_description(fpfh,keypoint_idx):
     for i in range(len(fpfh)):

@@ -1,5 +1,6 @@
 import open3d as o3d
 import numpy as np
+import torch
 
 def slice_point_cloud(point_cloud,slice_height, slice_thickness):
     # 获取点云的最小边界框
@@ -23,24 +24,8 @@ def slice_point_cloud(point_cloud,slice_height, slice_thickness):
 
     return sliced_cloud_left, sliced_cloud_right
 
-def find_nearest_point(point, point_cloud):
-    distances = np.linalg.norm(np.asarray(point_cloud.points) - point, axis=1)
-    nearest_index = np.argmin(distances)
-    nearest_point = point_cloud.points[nearest_index]
-    return nearest_point
 
-def find_matching_point(p_left, p_right, point_cloud):
-    left_indices = np.where(np.all(np.isclose(np.asarray(point_cloud.points), p_left), axis=1))[0]
-    right_points = np.asarray(point_cloud.points)[left_indices]
-    distances = np.linalg.norm(right_points - p_right, axis=1)
-    if len(distances) == 0:
-        return None, None
-    matching_index = np.argmin(distances)
-    matching_point_index = left_indices[matching_index]
-    matching_point = point_cloud.points[matching_point_index]
-    return matching_point_index, matching_point
-
-def slice_data_calculation(sliced_cloud_left, sliced_cloud_right,slice_thickness):
+def slice_data_calculation(sliced_cloud_left, sliced_cloud_right, slice_thickness):
     sliced_points_left = np.asarray(sliced_cloud_left.points)
     sliced_points_right = np.asarray(sliced_cloud_right.points)
     sliced_indices_left = np.arange(len(sliced_points_left))
@@ -52,34 +37,50 @@ def slice_data_calculation(sliced_cloud_left, sliced_cloud_right,slice_thickness
     while len(sliced_indices_left) > 0:
         p_left_index = sliced_indices_left[0]
         p_left = sliced_points_left[p_left_index]
-        p_right = find_nearest_point(p_left, sliced_cloud_right)
 
         c = slice_thickness
-        radius = c
-        matching_point_index = None
+        radius = 0
+        matching_point_index = 0
         matching_point = None
-
-        while matching_point_index is None:
-            indices_within_radius = np.where(np.linalg.norm(sliced_points_right - p_right, axis=1) <= radius)[0]
+        print(f"left to compute is: {len(sliced_indices_left)}")
+        while matching_point_index == 0:
+            # print("matching")
+            radius += c
+            distances = np.linalg.norm(sliced_points_right - p_left, axis=1)
+            print(f"{radius}")
+            indices_within_radius = np.where(distances <= radius)[0]
             if len(indices_within_radius) > 0:
-                matching_point_index, matching_point = find_matching_point(p_left, p_right, sliced_cloud_right)
-            else:
-                radius += c
+                closest_index = indices_within_radius[np.argmin(distances[indices_within_radius])]
+                closest_distance = np.min(distances[indices_within_radius])
+                print(f"{closest_index}/{closest_distance}")
+                # if closest_distance < np.min(np.linalg.norm(sliced_points_left[sliced_indices_left != p_left_index] - sliced_points_right[closest_index], axis=1)):
+                if len(np.where(np.linalg.norm(sliced_points_left - sliced_points_right[closest_index], axis=1) <closest_distance)[0]) == 0:
+                    matching_point_index = closest_index
+                    validated_indices_left.append(p_left_index)
+                    validated_indices_right.append(matching_point_index)                    
 
-        if matching_point_index is not None:
-            validated_indices_left.append(p_left_index)
-            validated_indices_right.append(matching_point_index)
+                # 删除验证的点对
+                print("delete")
+                if len(sliced_indices_left) > 0:
+                    sliced_indices_left = np.delete(sliced_indices_left, [0])
+                sliced_indices_right = np.delete(sliced_indices_right, np.where(sliced_indices_right == closest_index))
 
-            # 删除验证的点对
-            sliced_indices_left = np.delete(sliced_indices_left, 0)
-            sliced_indices_right = np.delete(sliced_indices_right, np.where(sliced_indices_right == matching_point_index))
-
+                # sliced_points_left = np.delete(sliced_points_left, 0, axis=0)
+                sliced_points_right = np.delete(sliced_points_right, np.where(sliced_indices_right == closest_index), axis=0)
+                break
+            else :
+                print("delete")
+                if len(sliced_indices_left) > 0:
+                    sliced_indices_left = np.delete(sliced_indices_left, [0])
+                # sliced_points_left = np.delete(sliced_points_left, 0, axis=0)
+                break
+    
     validated_points_left = sliced_points_left[validated_indices_left]
     validated_points_right = sliced_points_right[validated_indices_right]
 
     return validated_points_left, validated_points_right
 
-def connect_and_intersect_points(validated_points_left, validated_points_right, slice_thickness):
+def connect_and_intersect_points(validated_points_left, validated_points_right, slice_height):
     # 创建连接线段
     lines = []
     for i in range(len(validated_points_left)):
@@ -99,7 +100,7 @@ def connect_and_intersect_points(validated_points_left, validated_points_right, 
 
     # 求解交点
     plane_normal = np.array([0, 0, 1])  # 切片平面的法向量，这里假设为z轴正方向
-    plane_origin = np.array([0, 0, 0])  # 切片平面的原点，可根据具体需求进行设置
+    plane_origin = np.array([0, 0, slice_height])  # 切片平面的原点，设置为指定的切片高度
     intersection_points = []
 
     for i in range(len(validated_points_left)):
@@ -117,38 +118,53 @@ def connect_and_intersect_points(validated_points_left, validated_points_right, 
 
     return merged_lines, intersection_points
 
-# 读取PLY文件
-point_cloud = o3d.io.read_point_cloud(r'D:\Knowledge\Graduation_Design\WorkSpace\Py_WorkPlace\reconstruct\fr1_cam\mesh.ply')
 
-# 设置切片厚高度、厚度、阈值
-slice_height = 1.0
-slice_thickness = 0.2  # 切片厚度
 
-# 进行点云分层切片
-sliced_cloud_left, sliced_cloud_right = slice_point_cloud(point_cloud, slice_height,slice_thickness)
+def slice_ply(filename,slice_height,slice_thickness):
 
-# 进行切片数据计算
-validated_points_left, validated_points_right = slice_data_calculation(sliced_cloud_left, sliced_cloud_right,slice_thickness)
+    # 读取PLY文件
+    point_cloud = o3d.io.read_point_cloud(filename)
 
-# 连接切片点并求解交点
-merged_lines, intersection_points=connect_and_intersect_points(validated_points_left, validated_points_right,slice_thickness)
+    # 进行点云分层切片
+    sliced_cloud_left, sliced_cloud_right = slice_point_cloud(point_cloud, slice_height,slice_thickness)
 
-# 可视化切片后的点云
-intersection_cloud = o3d.geometry.PointCloud()
-intersection_cloud.points = o3d.utility.Vector3dVector(intersection_points)
-sliced_cloud_left.points = o3d.utility.Vector3dVector(validated_points_left)
-sliced_cloud_right.points = o3d.utility.Vector3dVector(validated_points_right)
+    # 进行切片数据计算
+    validated_points_left, validated_points_right = slice_data_calculation(sliced_cloud_left, sliced_cloud_right,slice_thickness)
 
-intersection_cloud_size = len(intersection_points)
-left_cloud_size = len(validated_points_left)
-right_cloud_size = len(validated_points_right)
+    # 连接切片点并求解交点
+    merged_lines, intersection_points=connect_and_intersect_points(validated_points_left, validated_points_right,slice_height)
 
-print("Intersection Cloud size:", intersection_cloud_size)
-print("Left Cloud size:", left_cloud_size)
-print("Right Cloud size:", right_cloud_size)
+    return validated_points_left,validated_points_right,merged_lines,intersection_points
 
-sliced_cloud_left.paint_uniform_color([0, 1, 0]) 
-sliced_cloud_right.paint_uniform_color([0, 0, 1]) 
-intersection_cloud.paint_uniform_color([1, 0, 0])  
-o3d.visualization.draw_geometries([sliced_cloud_left, sliced_cloud_right])
-# o3d.visualization.draw_geometries([sliced_cloud_left, sliced_cloud_right, intersection_cloud])
+
+# #接口样例
+# # torch.cuda.synchronize()
+# validated_points_left,validated_points_right,merged_lines,intersection_points = slice_ply(r'D:\Knowledge\Graduation_Design\WorkSpace\Py_WorkPlace\reconstruct\fr1_cam\mesh.ply',1.0,0.2)
+
+# # 可视化切片后的点云
+# intersection_cloud = o3d.geometry.PointCloud()
+# validated_cloud_left = o3d.geometry.PointCloud()
+# validated_cloud_right = o3d.geometry.PointCloud()
+# intersection_cloud.points = o3d.utility.Vector3dVector(intersection_points)
+# validated_cloud_left.points = o3d.utility.Vector3dVector(validated_points_left)
+# validated_cloud_right.points = o3d.utility.Vector3dVector(validated_points_right)
+
+# intersection_cloud_size = len(intersection_points)
+# left_cloud_size = len(validated_points_left)
+# right_cloud_size = len(validated_points_right)
+
+# print("Intersection Cloud size:", intersection_cloud_size)
+# print("Left Cloud size:", left_cloud_size)
+# print("Right Cloud size:", right_cloud_size)
+
+# spheres = o3d.geometry.TriangleMesh()
+# for point in intersection_cloud.points:
+#     sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.01)
+#     sphere.translate(point)
+#     spheres += sphere
+# validated_cloud_left.paint_uniform_color([1, 1, 1]) 
+# validated_cloud_right.paint_uniform_color([1, 1, 1]) 
+# intersection_cloud.paint_uniform_color([0, 0, 0])  
+# merged_lines.paint_uniform_color([0,0.5,0])
+# # o3d.visualization.draw_geometries([spheres,merged_lines,validated_cloud_left,validated_cloud_right])
+# o3d.visualization.draw_geometries([spheres])

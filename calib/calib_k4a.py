@@ -1,6 +1,6 @@
 import cv2
 from pykinect_azure import * 
-import calib_extrinsic
+import calib.calib_extrinsic as calib_extrinsic
 from pykinect_azure.k4a import _k4a as k4a
 
 def CopyIntrinsics(from_intrinsics, to_intrinsics):

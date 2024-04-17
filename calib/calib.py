@@ -1,14 +1,12 @@
-import sys
 from typing import List
 import cv2
 from pykinect_azure import *
-from calib_extrinsic import *
-import calib_k4a
+from calib.calib_extrinsic import *
+import calib.calib_k4a as calib_k4a
 from pykinect_azure.k4a import _k4a as k4a
-from env import mkv1_file_env,mkv2_file_env
 
 
-def main() -> int:
+def calib(mkv1_file_env,mkv2_file_env) -> int:
     filePaths:List[str] = [mkv1_file_env,
                            mkv2_file_env]
 
@@ -151,7 +149,3 @@ def main() -> int:
         result = K4A_RESULT_FAILED
 
     return result == K4A_RESULT_SUCCEEDED
-
-
-if __name__ == "__main__":
-    sys.exit(main())

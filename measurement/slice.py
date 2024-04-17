@@ -1,15 +1,8 @@
 import open3d as o3d
 import numpy as np
-import torch
-from env import reconstructed_file_env
 
+# 获取height两边delta(thickness)内的点云
 def slice_point_cloud(point_cloud,slice_height, slice_thickness):
-    # 获取点云的最小边界框
-    aabb = point_cloud.get_axis_aligned_bounding_box()
-    min_bound = aabb.get_min_bound()
-    max_bound = aabb.get_max_bound()
-    min_point = np.mean(min_bound, axis=0)
-    max_point = np.mean(max_bound, axis=0)
 
     points = np.asarray(point_cloud.points)
     sliced_cloud_left = o3d.geometry.PointCloud()
@@ -25,7 +18,7 @@ def slice_point_cloud(point_cloud,slice_height, slice_thickness):
 
     return sliced_cloud_left, sliced_cloud_right
 
-
+# 通过求交法获得匹配对
 def slice_data_calculation(sliced_cloud_left, sliced_cloud_right, slice_thickness):
     sliced_points_left = np.asarray(sliced_cloud_left.points)
     sliced_points_right = np.asarray(sliced_cloud_right.points)
@@ -138,34 +131,34 @@ def slice_ply(filename,slice_height,slice_thickness):
     return validated_points_left,validated_points_right,merged_lines,intersection_points
 
 
-# #接口样例
-# # torch.cuda.synchronize()
-# validated_points_left,validated_points_right,merged_lines,intersection_points = slice_ply(reconstructed_file_env)
+#可视化测试接口，！NOT REMOTE
+def test_slice(filename,slice_height,slice_thickness):
+    validated_points_left,validated_points_right,merged_lines,intersection_points = slice_ply(filename,slice_height,slice_thickness)
 
-# # 可视化切片后的点云
-# intersection_cloud = o3d.geometry.PointCloud()
-# validated_cloud_left = o3d.geometry.PointCloud()
-# validated_cloud_right = o3d.geometry.PointCloud()
-# intersection_cloud.points = o3d.utility.Vector3dVector(intersection_points)
-# validated_cloud_left.points = o3d.utility.Vector3dVector(validated_points_left)
-# validated_cloud_right.points = o3d.utility.Vector3dVector(validated_points_right)
+    # 可视化切片后的点云
+    intersection_cloud = o3d.geometry.PointCloud()
+    validated_cloud_left = o3d.geometry.PointCloud()
+    validated_cloud_right = o3d.geometry.PointCloud()
+    intersection_cloud.points = o3d.utility.Vector3dVector(intersection_points)
+    validated_cloud_left.points = o3d.utility.Vector3dVector(validated_points_left)
+    validated_cloud_right.points = o3d.utility.Vector3dVector(validated_points_right)
 
-# intersection_cloud_size = len(intersection_points)
-# left_cloud_size = len(validated_points_left)
-# right_cloud_size = len(validated_points_right)
+    intersection_cloud_size = len(intersection_points)
+    left_cloud_size = len(validated_points_left)
+    right_cloud_size = len(validated_points_right)
 
-# print("Intersection Cloud size:", intersection_cloud_size)
-# print("Left Cloud size:", left_cloud_size)
-# print("Right Cloud size:", right_cloud_size)
+    print("Intersection Cloud size:", intersection_cloud_size)
+    print("Left Cloud size:", left_cloud_size)
+    print("Right Cloud size:", right_cloud_size)
 
-# spheres = o3d.geometry.TriangleMesh()
-# for point in intersection_cloud.points:
-#     sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.01)
-#     sphere.translate(point)
-#     spheres += sphere
-# validated_cloud_left.paint_uniform_color([1, 1, 1]) 
-# validated_cloud_right.paint_uniform_color([1, 1, 1]) 
-# intersection_cloud.paint_uniform_color([0, 0, 0])  
-# merged_lines.paint_uniform_color([0,0.5,0])
-# # o3d.visualization.draw_geometries([spheres,merged_lines,validated_cloud_left,validated_cloud_right])
-# o3d.visualization.draw_geometries([spheres])
+    spheres = o3d.geometry.TriangleMesh()
+    for point in intersection_cloud.points:
+        sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.005)
+        sphere.translate(point)
+        spheres += sphere
+    validated_cloud_left.paint_uniform_color([0, 1, 0]) 
+    validated_cloud_right.paint_uniform_color([0, 0, 1]) 
+    intersection_cloud.paint_uniform_color([0, 0, 0])  
+    merged_lines.paint_uniform_color([1,0,0])
+    # o3d.visualization.draw_geometries([merged_lines,validated_cloud_left,validated_cloud_right])
+    o3d.visualization.draw_geometries([spheres])

@@ -5,7 +5,6 @@ import numpy as np
 import open3d as o3d
 from pupil_apriltags import Detector
 from cv2 import aruco
-from pykinect_azure import k4a
 import os
 
 #外参类型

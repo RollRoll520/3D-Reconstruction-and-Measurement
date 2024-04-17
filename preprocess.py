@@ -10,20 +10,6 @@ from kinfu.utils import load_config
 
 
 def read_file_list(filename):
-    """
-    Reads a trajectory from a text file.
-
-    File format:
-    The file format is "stamp d1 d2 d3 ...", where stamp denotes the time stamp (to be matched)
-    and "d1 d2 d3.." is arbitary data (e.g., a 3D position and 3D orientation) associated to this timestamp.
-
-    Input:
-    filename -- File name
-
-    Output:
-    dict -- dictionary of (stamp,data) tuples
-
-    """
     file = open(filename)
     data = file.read()
     lines = data.replace(","," ").replace("\t"," ").split("\n")
@@ -33,20 +19,6 @@ def read_file_list(filename):
 
 
 def associate(first_list, second_list, offset=0.0, max_difference=0.02):
-    """
-    Associate two dictionaries of (stamp,data). As the time stamps never match exactly, we aim
-    to find the closest match for every input tuple.
-
-    Input:
-    first_list -- first dictionary of (stamp,data) tuples
-    second_list -- second dictionary of (stamp,data) tuples
-    offset -- time offset between both dictionaries (e.g., to models the delay between the sensors)
-    max_difference -- search radius for candidate generation
-
-    Output:
-    matches -- list of matched tuples ((stamp1,data1),(stamp2,data2))
-
-    """
     first_keys = list(first_list)
     second_keys = list(second_list)
     potential_matches = [(abs(a - (b + offset)), a, b)
@@ -105,7 +77,7 @@ def get_poses_from_associations(fname):
 
     return poses
 
-
+# todo:added an suitable api to export
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # standard configs

@@ -30,6 +30,8 @@ Options:
 
 ```
 
+You can create aruco and apriltag board image at [aruco board](https://www.2weima.com/aruco.html)
+
 ## Calibration
 
 This extrinsic calibration is a Python implementation based on the article [Extrinsic Calibration of Multiple Azure Kinect Cameras](https://tianyusong.com/2021/06/04/multiple-azure-kinect-extrinsic-calibration/).

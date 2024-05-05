@@ -127,6 +127,7 @@ def process_capture(file,frame):
     frame.ColorWidth = k4a.k4a_image_get_width_pixels(images[0])
     frame.ColorHeight = k4a.k4a_image_get_height_pixels(images[0])
     frame.ColorStride = k4a.k4a_image_get_stride_bytes(images[0])
+    frame.TimeStamp = k4a.k4a_image_get_timestamp_usec(images[0])
     color_image = k4a.k4a_image_get_buffer(images[0])
     color_size = k4a.k4a_image_get_size(images[0])
     color_buffer = ctypes.cast(color_image, ctypes.POINTER(ctypes.c_uint8 * color_size))

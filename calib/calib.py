@@ -68,7 +68,7 @@ def calib(mkv1_file_env,mkv2_file_env) -> int:
             playbacks[i].set_color_conversion( k4a.K4A_IMAGE_FORMAT_COLOR_BGRA32)
             
             for j in range(30):
-                # Skip the first 30 capture of each recording.
+                # 跳过30帧
                 stream_result,files[i].capture = playbacks[i].get_next_capture()
 
                 if not stream_result:
@@ -106,7 +106,7 @@ def calib(mkv1_file_env,mkv2_file_env) -> int:
                         frames[i].Accelerometer = [imu_sample._struct.acc_sample.v[0],
                                                imu_sample._struct.acc_sample.v[1],
                                                imu_sample._struct.acc_sample.v[2]]
-                        frames[i].CameraIndex = i + 1
+                        frames[i].CameraIndex = i
                         frames[i].filename = files[i].filename  
 
 

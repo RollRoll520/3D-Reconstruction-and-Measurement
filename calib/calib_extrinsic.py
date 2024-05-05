@@ -1,11 +1,16 @@
+from ast import IsNot
 import json
+import math
 from typing import List
 import cv2
 import numpy as np
 import open3d as o3d
 from pupil_apriltags import Detector
+from scipy.spatial.transform import Rotation
 from cv2 import aruco
 import os
+
+from sympy import true
 
 #外参类型
 class CameraExtrinsics:
@@ -43,6 +48,7 @@ class FrameInfo:
     def __init__(self):
         self.Calibration = CameraCalibration()
         self.Accelerometer = np.zeros(3)
+        self.TimeStamp = 0
         self.ColorImage = []
         self.ColorWidth = 0
         self.ColorHeight = 0
@@ -102,33 +108,33 @@ class ExtrinsicsCalibration:
 
         print("Generating Cloud From Frames")
         self.full_cloud[idx] = o3d.geometry.PointCloud()
-        count = frame.ColorWidth * frame.ColorHeight
         coord_stride = 1
 
         self.full_cloud[idx].points = o3d.utility.Vector3dVector()
-        self.full_cloud[idx].colors = o3d.utility.Vector3dVector()
+        self.full_cloud[idx].colors = o3d.utility.Vector3dVector([])
 
-        for i in range(0, count, coord_stride):
-            q = np.array([
-                frame.PointCloudData[3 * i + 0] / 1000.0,
-                frame.PointCloudData[3 * i + 1] / 1000.0,
-                frame.PointCloudData[3 * i + 2] / 1000.0
-            ])
-            if q[2] == 0:
-                continue
-            
-            # BGR -> RGB
-            color = np.array([
-                frame.ColorImage[4 * i + 2] / 255.0,
-                frame.ColorImage[4 * i + 1] / 255.0,
-                frame.ColorImage[4 * i + 0] / 255.0
-            ])
+        for y in range(0, frame.ColorHeight, coord_stride):
+            for x in range(0, frame.ColorWidth, coord_stride):
+                q_idx = (y * frame.ColorWidth + x) * 3
+                q = np.array([
+                    frame.PointCloudData[q_idx] / 1000.0,
+                    frame.PointCloudData[q_idx + 1] / 1000.0,
+                    frame.PointCloudData[q_idx + 2] / 1000.0
+                ])
+                if q[2] == 0:
+                    continue
+                 
+                # RGBA -> RGB
+                color_rgba = frame.ColorImage[y, x]
+                color_rgb = color_rgba[:3][::-1] / 255.0
 
-            if np.all(color == 0):
-                continue
+                if np.all(color_rgb == 0):
+                    continue
 
-            self.full_cloud[idx].points.append(q)
-            self.full_cloud[idx].colors.append(color)
+                self.full_cloud[idx].points.append(q)
+                self.full_cloud[idx].colors.append(color_rgb.tolist())
+
+        self.full_cloud[idx].colors = o3d.utility.Vector3dVector(self.full_cloud[idx].colors)
 
         print("Constructed Open3D PointCloud for Camera ID:", idx)
         return True
@@ -143,22 +149,21 @@ class ExtrinsicsCalibration:
 
         return 
     
-    def down_sample(self,cloud, voxel_size, idx):        
-        # down_sample the point cloud
-        cloud = self.full_cloud[idx].VoxelDownSample(voxel_size)
-        if cloud is None:
-            print("VoxelDownSample failed")
-            return False
-        
-        # Estimate normals with full resolution point cloud
+
+    def down_sample(self, cloud, voxel_size, idx):
+        # 对点云进行下采样
+        voxel_down_pcd = self.full_cloud[idx].voxel_down_sample(voxel_size)
+        if voxel_down_pcd is None:
+            print("VoxelDownSample Failure")
+            return False     
+        # 使用完整分辨率的点云估计法线
         normal_radius = voxel_size * 2.0
         normals_params = o3d.geometry.KDTreeSearchParamHybrid(radius=normal_radius, max_nn=30)
         fast_normal_computation = True
-        cloud.estimate_normals(normals_params, fast_normal_computation)
-    
-        # Incorporate the assumption that normals should be pointed towards the camera
-        cloud.orient_normals_towards_camera_location(np.array([0, 0, 0]))
-    
+        voxel_down_pcd.estimate_normals(normals_params, fast_normal_computation)     
+        # 假设法线应朝向相机位置
+        voxel_down_pcd.orient_normals_towards_camera_location(np.array([0, 0, 0]))
+        print("------VoxelDownSample Finished------")   
         return True
 
 
@@ -168,7 +173,6 @@ class ExtrinsicsCalibration:
         for i in range(len(frames)):
             temp = AlignmentTransform()
             output.append(temp)
-        # output = []
 
         if len(frames) == 0:
             print("No images provided to registration")
@@ -179,29 +183,52 @@ class ExtrinsicsCalibration:
         camera_count = len(frames)
         self.full_cloud = [None] * camera_count
         
-        tag_poses = []
-        current_transform = []
+        tag_poses = [None] * camera_count
+        current_transform = [None] * camera_count
         l = 0.38
 
         for camera_index in range(camera_count):
-            color_image = frames[0].ColorImage
+            color_image = frames[camera_index].ColorImage
 
 
             gray = cv2.cvtColor(color_image, cv2.COLOR_BGR2GRAY)
-            # cv2.imshow("Color Image", gray)
-            # cv2.waitKey(0)
-            # cv2.destroyAllWindows()
 
-            detections = self.tag_detector.detect(gray)
+            intrinsics = frames[camera_index].Calibration.Color
+            tag_size = 0.1
+            detections = self.tag_detector.detect(gray,true,[intrinsics.fx,intrinsics.fy,intrinsics.cx,intrinsics.cx],tag_size)
 
             print("Detected", len(detections), "fiducial markers")
             found = False
             calibration = frames[camera_index].Calibration
 
             #apriltag
-            for detection in detections:
+            if len(detections) != 0:
+                detection = detections[0]
                 print("Camera", camera_index, "detected marker ID:", detection.tag_id)
-                #todo:apriltag
+                print("pose_R:\n",detection.pose_R)
+                print("pose_t:\n",detection.pose_t)
+
+                if detection.tag_id == 1:  #todo:添加纠正
+                    detection.pose_R = detection.pose_R
+                    detection.pose_t = detection.pose_t
+                elif detection.tag_id == 2:
+                    detection.pose_R = detection.pose_R
+                    detection.pose_t = detection.pose_t
+                elif detection.tag_id == 3:
+                    detection.pose_R = detection.pose_R
+                    detection.pose_t = detection.pose_t
+
+                transform = np.identity(4, dtype=np.float32)  # 创建单位矩阵
+                for row in range(3):                          # 将旋转矩阵的值复制到transform矩阵中
+                    for col in range(3):
+                        transform[row, col] = detection.pose_R[row, col]                
+                for row in range(3):                          # 将平移向量的值复制到transform矩阵中
+                    transform[row, 3] = detection.pose_t[row]
+                print("Pose:\n",transform)
+                tag_poses[camera_index] = transform
+                tag_pose = np.linalg.inv(tag_poses[0]) @ tag_poses[camera_index]  # 计算相对于第一个相机的标记姿态变换矩阵
+                current_transform[camera_index] = tag_pose.astype(np.float64)  # 转换为双精度矩阵
+                found = true
 
             if not found:
                 print("No AprilTag detected, trying ChArUco board")
@@ -244,60 +271,63 @@ class ExtrinsicsCalibration:
                             current_transform[camera_index] = tag_pose.astype(np.float64)  # 转换为双精度矩阵
                             found = True  # 设置标志表示找到了姿态
 
-
-
             if not found:
                 print(f"Camera {camera_index} did not observe the fiducial marker - Waiting for the next frame")
                 return output
             
-            try:
-                M_PI_FLOAT
-            except NameError:
-                M_PI_FLOAT = 3.14159265
+
+            M_PI_FLOAT = 3.14159265
             
             pose0 = tag_poses[0]
-            
             # Extract yaw angle from pose0
-            euler0 = np.array(o3d.geometry.get_euler_angles_from_rotation_matrix(pose0[:3, :3]))
-            yaw = euler0[2]
+            rotation = Rotation.from_matrix(pose0[:3, :3])
+            
+            euler0 = rotation.as_euler('xyz', degrees=True)
+            yaw = np.radians(euler0[2])
             print("Detected marker yaw =", np.degrees(yaw), "degrees")
             
-            # Create yaw transformation matrix
-            yaw_rot = o3d.geometry.get_rotation_matrix_from_axis_angle([0, 1, 0], -yaw)
+            # 创建绕 y 轴旋转的角度轴
+            yaw_rot = np.array([[math.cos(-yaw), 0, math.sin(-yaw)],
+                    [0, 1, 0],
+                    [-math.sin(-yaw), 0, math.cos(-yaw)]])
+            # 创建 yaw_transform 仿射变换矩阵
             yaw_transform = np.eye(4)
             yaw_transform[:3, :3] = yaw_rot
             
-            # Center scene on marker
+            # 将场景以标记为中心
             marker_offset_0 = pose0[:3, 3]
             
-            # Correct camera tilt based on accelerometer
+            # 根据加速度计校正相机的倾斜
             tilt_transform = np.eye(4)
             
-            # Use first camera as reference
+            # 使用第一个相机作为参考
             accel = frames[0].Accelerometer
             if np.all(accel == 0):
                 print("IMU acceleration reading not available for tilt correction")
             else:
                 print("Correcting tilt of primary camera using gravity down-vector", accel)
-                # Adjust accelerometer and point cloud frames
-                q = o3d.geometry.get_rotation_matrix_from_two_vectors([accel[1], accel[2], accel[0]], [0, -1, 0])
-                tilt_r = q[:3, :3]
+                # 调整加速度计和点云的坐标系
+                gravity_vector = np.array([accel[1], accel[2], accel[0]])
+                tilt_r, _ = cv2.Rodrigues(np.array([0, -1, 0]) * gravity_vector)
+                tilt_transform = np.eye(4)
                 tilt_transform[:3, :3] = tilt_r.T
+
+                # 通过 tilt_r 矩阵的逆变换对marker_offset_0进行校正
                 marker_offset_0 = np.linalg.inv(tilt_r) @ marker_offset_0
             
-            # Create translation transformation matrix
-            translation = o3d.geometry.get_translation_matrix(-marker_offset_0)
+            # 创建平移变换矩阵
             translation_transform = np.eye(4)
-            translation_transform[:3, 3] = translation[:3, 3]
+            translation_transform[:3, 3] = -marker_offset_0
             
-            # Create center transformation matrix
+            # 创建 center_transform 变换矩阵
             center_transform = np.matmul(np.matmul(yaw_transform, translation_transform), tilt_transform)
-            
+            print("center_transform:")
+            print(center_transform)
             print("===========================================================")
             print("!!! Starting extrinsics calibration for", camera_count, "cameras...")
             
             output[0].set_from_matrix(center_transform)
-            
+
             for camera_index in range(camera_count):
                 if not self.GenerateFullCloudFromFrames(frames[camera_index]):
                     print("GenerateCloudFromFrames failed for i =", camera_index)
@@ -311,6 +341,7 @@ class ExtrinsicsCalibration:
                 cloud_i.transform(center_transform.astype(np.float64) @ current_transform[camera_index])
                 filename = "cloud_" + str(camera_index) + ".ply"
                 o3d.io.write_point_cloud(filename, cloud_i, write_ascii=True)
+
 
             voxel_radius = [0.04, 0.02, 0.01]  # 每个阶段的体素半径
             max_iter = [50, 30, 14]  # 每个阶段的最大迭代次数
@@ -372,8 +403,10 @@ class ExtrinsicsCalibration:
                 calibration = frames[camera_index].Calibration
                 r_depth = np.array(calibration.RotationFromDepth, dtype=np.float32).reshape(3, 3).T
                 t_depth = np.array(calibration.TranslationFromDepth, dtype=np.float32).reshape(3, 1) / 1000.0  # in meters
-                t[:3, :3] = t[:3, :3] @ r_depth
-                t[:3, 3] = t[:3, 3] + t[:3, :3] @ t_depth
+
+                t[:3, :3] = np.matmul(t[:3, :3], r_depth)
+                t[:3, 3] = t[:3, 3] + np.matmul(r_depth, t_depth).flatten()
+
 
                 # Flip y and z for OpenGL coordinate system
                 yz_transform = np.eye(4, dtype=np.float32)
@@ -381,9 +414,14 @@ class ExtrinsicsCalibration:
                 yz_transform[2, 2] = -1.0
                 t = yz_transform @ t @ yz_transform
 
+                # Convert rotation matrix to quaternion
+                r = Rotation.from_matrix(t[:3, :3])
+                rotation_quat = r.as_quat()
+
                 extrinsics_mat = {
+                    "timeStamp":frames[camera_index].TimeStamp,
                     "translation": t[:3, 3].tolist(),
-                    "rotation": o3d.geometry.OrientationUtility.convert_rotation_matrix_to_quaternion(t[:3, :3]).tolist()
+                    "rotation": rotation_quat.tolist()
                 }
 
                 # Save JSON file
@@ -403,8 +441,8 @@ class ExtrinsicsCalibration:
                 file.write(str(out) + "\n")
         print("Extrinsics calibration saved to file:", file_path)
 
-# 示例用法
 
+# 示例用法
 # colorFrame = FrameInfo()
 # depthFrame = FrameInfo()
 # irFrame = FrameInfo()

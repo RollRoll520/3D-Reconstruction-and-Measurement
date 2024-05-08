@@ -11,7 +11,7 @@ def calib(mkv1_file_env,mkv2_file_env) -> int:
                            mkv2_file_env]
 
 
-    file_count = len(filePaths) - 1
+    file_count = 2
     master_found = False
     result = K4A_RESULT_SUCCEEDED
     initialize_libraries()
@@ -66,16 +66,16 @@ def calib(mkv1_file_env,mkv2_file_env) -> int:
                 # break
 
             playbacks[i].set_color_conversion( k4a.K4A_IMAGE_FORMAT_COLOR_BGRA32)
+
             
-            for j in range(30):
+            for j in range(30-i):
                 # 跳过30帧
                 stream_result,files[i].capture = playbacks[i].get_next_capture()
 
                 if not stream_result:
                     print(f"ERROR: Recording file is empty: {files[i].filename}")
                     result = K4A_RESULT_FAILED
-                    break
-                # k4a.k4a_capture_release(files[i].capture._handle)
+                    break        
             
 
         if result == K4A_RESULT_SUCCEEDED:
@@ -118,10 +118,10 @@ def calib(mkv1_file_env,mkv2_file_env) -> int:
                         print(f"ERROR: Failed to read capture from file: {files[i].filename}")
                         result = K4A_RESULT_FAILED 
                         terminated = True
-                        break
-                    k4a.k4a_capture_release(files[i].capture._handle)                    
+                        break                 
 
                 if result != K4A_RESULT_SUCCEEDED:
+                    print("Failed")
                     break
                 
                 # cv2.imshow("Color Image", frames[0].ColorImage)
@@ -131,8 +131,6 @@ def calib(mkv1_file_env,mkv2_file_env) -> int:
                 extrinsics = extrinsicsCalib.calculate_extrinsics(frames)
                 if(len(extrinsics)==0):
                     print(f"ERROR: Full registration failed")
-                else :
-                    break
 
                 
             print("==========================================================================")
@@ -141,8 +139,8 @@ def calib(mkv1_file_env,mkv2_file_env) -> int:
             #     # Save the extrinsics calibration to a file.
             #     extrinsicsCalib.save_to_file("extrinsics_calib.txt")
 
-        for i in range(file_count):
-            playbacks[i].close()
+        # for i in range(file_count):
+        #     playbacks[i].close()
 
     except Exception as e:
         print(f"ERROR: Exception occurred: {str(e)}")

@@ -61,7 +61,6 @@ def first_capture_timestamp(capture):
             timestamp = k4a.k4a_image_get_device_timestamp_usec(images[i])
             if timestamp < min_timestamp:
                 min_timestamp = timestamp
-            k4a.k4a_image_release(images[i])
             images[i] = None
 
     return min_timestamp
@@ -127,7 +126,7 @@ def process_capture(file,frame):
     frame.ColorWidth = k4a.k4a_image_get_width_pixels(images[0])
     frame.ColorHeight = k4a.k4a_image_get_height_pixels(images[0])
     frame.ColorStride = k4a.k4a_image_get_stride_bytes(images[0])
-    frame.TimeStamp = k4a.k4a_image_get_timestamp_usec(images[0])
+    frame.TimeStamp = k4a.k4a_image_get_device_timestamp_usec(images[0])
     color_image = k4a.k4a_image_get_buffer(images[0])
     color_size = k4a.k4a_image_get_size(images[0])
     color_buffer = ctypes.cast(color_image, ctypes.POINTER(ctypes.c_uint8 * color_size))
@@ -170,8 +169,6 @@ def process_capture(file,frame):
     frame.PointCloudData= bytearray(cloud_size)
     frame.PointCloudData[:cloud_size] =point_cloud_image_data[:cloud_size] 
 
-    # k4a.k4a_image_release(transformed_depth_image._handle)
-    # k4a.k4a_image_release(point_cloud_image._handle)
     transformed_depth_image.reset()
     point_cloud_image.reset
 
@@ -181,7 +178,6 @@ def process_capture(file,frame):
         if images[i] is not None:
             timestamp = k4a.k4a_image_get_device_timestamp_usec(images[i])
             print("  %7d usec" % timestamp, end="")
-            k4a.k4a_image_release(images[i])
             images[i] = None
         else:
             print("  %12s" % "", end="")

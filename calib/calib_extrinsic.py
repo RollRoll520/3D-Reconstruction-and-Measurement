@@ -1,4 +1,5 @@
 from ast import IsNot
+import copy
 import json
 import math
 from typing import List
@@ -9,8 +10,6 @@ from pupil_apriltags import Detector
 from scipy.spatial.transform import Rotation
 from cv2 import aruco
 import os
-
-from sympy import true
 
 #外参类型
 class CameraExtrinsics:
@@ -150,21 +149,21 @@ class ExtrinsicsCalibration:
         return 
     
 
-    def down_sample(self, cloud, voxel_size, idx):
+    def down_sample(self, voxel_size, idx):
         # 对点云进行下采样
-        voxel_down_pcd = self.full_cloud[idx].voxel_down_sample(voxel_size)
-        if voxel_down_pcd is None:
+        temp = self.full_cloud[idx].voxel_down_sample(voxel_size)
+        if temp is None:
             print("VoxelDownSample Failure")
-            return False     
+            return None     
         # 使用完整分辨率的点云估计法线
         normal_radius = voxel_size * 2.0
         normals_params = o3d.geometry.KDTreeSearchParamHybrid(radius=normal_radius, max_nn=30)
         fast_normal_computation = True
-        voxel_down_pcd.estimate_normals(normals_params, fast_normal_computation)     
+        temp.estimate_normals(normals_params, fast_normal_computation)     
         # 假设法线应朝向相机位置
-        voxel_down_pcd.orient_normals_towards_camera_location(np.array([0, 0, 0]))
+        temp.orient_normals_towards_camera_location(np.array([0, 0, 0]))
         print("------VoxelDownSample Finished------")   
-        return True
+        return temp
 
 
     def calculate_extrinsics(self, frames):
@@ -195,7 +194,7 @@ class ExtrinsicsCalibration:
 
             intrinsics = frames[camera_index].Calibration.Color
             tag_size = 0.1
-            detections = self.tag_detector.detect(gray,true,[intrinsics.fx,intrinsics.fy,intrinsics.cx,intrinsics.cx],tag_size)
+            detections = self.tag_detector.detect(gray,True,[intrinsics.fx,intrinsics.fy,intrinsics.cx,intrinsics.cx],tag_size)
 
             print("Detected", len(detections), "fiducial markers")
             found = False
@@ -228,7 +227,7 @@ class ExtrinsicsCalibration:
                 tag_poses[camera_index] = transform
                 tag_pose = np.linalg.inv(tag_poses[0]) @ tag_poses[camera_index]  # 计算相对于第一个相机的标记姿态变换矩阵
                 current_transform[camera_index] = tag_pose.astype(np.float64)  # 转换为双精度矩阵
-                found = true
+                found = True
 
             if not found:
                 print("No AprilTag detected, trying ChArUco board")
@@ -276,160 +275,170 @@ class ExtrinsicsCalibration:
                 return output
             
 
-            M_PI_FLOAT = 3.14159265
-            
-            pose0 = tag_poses[0]
-            # Extract yaw angle from pose0
-            rotation = Rotation.from_matrix(pose0[:3, :3])
-            
-            euler0 = rotation.as_euler('xyz', degrees=True)
-            yaw = np.radians(euler0[2])
-            print("Detected marker yaw =", np.degrees(yaw), "degrees")
-            
-            # 创建绕 y 轴旋转的角度轴
-            yaw_rot = np.array([[math.cos(-yaw), 0, math.sin(-yaw)],
-                    [0, 1, 0],
-                    [-math.sin(-yaw), 0, math.cos(-yaw)]])
-            # 创建 yaw_transform 仿射变换矩阵
-            yaw_transform = np.eye(4)
-            yaw_transform[:3, :3] = yaw_rot
-            
-            # 将场景以标记为中心
-            marker_offset_0 = pose0[:3, 3]
-            
-            # 根据加速度计校正相机的倾斜
+        M_PI_FLOAT = 3.14159265
+        
+        pose0 = tag_poses[0]
+        # Extract yaw angle from pose0
+        rotation = Rotation.from_matrix(pose0[:3, :3])
+        
+        euler0 = rotation.as_euler('xyz', degrees=True)
+        yaw = np.radians(euler0[2])
+        print("Detected marker yaw =", np.degrees(yaw), "degrees")
+        
+        # 创建绕 y 轴旋转的角度轴
+        yaw_rot = np.array([[math.cos(-yaw), 0, math.sin(-yaw)],
+                [0, 1, 0],
+                [-math.sin(-yaw), 0, math.cos(-yaw)]])
+        # 创建 yaw_transform 仿射变换矩阵
+        yaw_transform = np.eye(4)
+        yaw_transform[:3, :3] = yaw_rot
+        
+        # 将场景以标记为中心
+        marker_offset_0 = pose0[:3, 3]
+        
+        # 根据加速度计校正相机的倾斜
+        tilt_transform = np.eye(4)
+        
+        # 使用第一个相机作为参考
+        accel = frames[0].Accelerometer
+        if np.all(accel == 0):
+            print("IMU acceleration reading not available for tilt correction")
+        else:
+            print("Correcting tilt of primary camera using gravity down-vector", accel)
+            # 调整加速度计和点云的坐标系
+            gravity_vector = np.array([accel[1], accel[2], accel[0]])
+            tilt_r, _ = cv2.Rodrigues(np.array([0, -1, 0]) * gravity_vector)
             tilt_transform = np.eye(4)
+            tilt_transform[:3, :3] = tilt_r.T
+            # 通过 tilt_r 矩阵的逆变换对marker_offset_0进行校正
+            marker_offset_0 = np.linalg.inv(tilt_r) @ marker_offset_0
+        
+        # 创建平移变换矩阵
+        translation_transform = np.eye(4)
+        translation_transform[:3, 3] = -marker_offset_0
+        
+        # 创建 center_transform 变换矩阵
+        center_transform = np.matmul(np.matmul(yaw_transform, translation_transform), tilt_transform)
+        print("center_transform:")
+        print(center_transform)
+        print("===========================================================")
+        print("!!! Starting extrinsics calibration for", camera_count, "cameras...")
+        
+        output[0].set_from_matrix(center_transform)
+        for camera_index in range(camera_count):
+            if not self.GenerateFullCloudFromFrames(frames[camera_index]):
+                print("GenerateCloudFromFrames failed for i =", camera_index)
+                return False
             
-            # 使用第一个相机作为参考
-            accel = frames[0].Accelerometer
-            if np.all(accel == 0):
-                print("IMU acceleration reading not available for tilt correction")
-            else:
-                print("Correcting tilt of primary camera using gravity down-vector", accel)
-                # 调整加速度计和点云的坐标系
-                gravity_vector = np.array([accel[1], accel[2], accel[0]])
-                tilt_r, _ = cv2.Rodrigues(np.array([0, -1, 0]) * gravity_vector)
-                tilt_transform = np.eye(4)
-                tilt_transform[:3, :3] = tilt_r.T
+            cloud_i = o3d.geometry.PointCloud()
+            cloud_i = self.down_sample(0.01, camera_index)
+            if(cloud_i is None):
+                print("DownSample failed for i =", camera_index)
+                return False
+            
+            cloud_i.transform(center_transform.astype(np.float64) @ current_transform[camera_index])
+            filename = "cloud_" + str(camera_index) + ".ply"
+            o3d.io.write_point_cloud(filename, cloud_i, write_ascii=True)
 
-                # 通过 tilt_r 矩阵的逆变换对marker_offset_0进行校正
-                marker_offset_0 = np.linalg.inv(tilt_r) @ marker_offset_0
-            
-            # 创建平移变换矩阵
-            translation_transform = np.eye(4)
-            translation_transform[:3, 3] = -marker_offset_0
-            
-            # 创建 center_transform 变换矩阵
-            center_transform = np.matmul(np.matmul(yaw_transform, translation_transform), tilt_transform)
-            print("center_transform:")
-            print(center_transform)
-            print("===========================================================")
-            print("!!! Starting extrinsics calibration for", camera_count, "cameras...")
-            
-            output[0].set_from_matrix(center_transform)
+        voxel_radius = [0.04, 0.02, 0.01]  # 每个阶段的体素半径
+        max_iter = [50, 30, 14]  # 每个阶段的最大迭代次数
 
-            for camera_index in range(camera_count):
-                if not self.GenerateFullCloudFromFrames(frames[camera_index]):
-                    print("GenerateCloudFromFrames failed for i =", camera_index)
-                    return False
-                
-                cloud_i = o3d.geometry.PointCloud()
-                if not self.down_sample(cloud_i, 0.01, camera_index):
+        for stage in range(3):
+            radius = voxel_radius[stage]  # 当前阶段的体素半径
+            iter = max_iter[stage]  # 当前阶段的最大迭代次数
+            print("voxel radius:", voxel_radius[stage], "Max iterations:", max_iter[stage])
+            cloud_0 = o3d.geometry.PointCloud()  # 创建点云对象 cloud_0
+            cloud_0 = self.down_sample(radius, 0)  # 对 cloud_0 进行下采样
+            if cloud_0 is None:
+                print("DownSample failed for i=0")
+                return False
+            for camera_index in range(1, camera_count):  # 遍历每个相机索引
+                cloud_i = o3d.geometry.PointCloud()  # 创建点云对象 cloud_i
+                cloud_i = self.down_sample(radius, camera_index)  # 对 cloud_i 进行下采样
+                if cloud_i is None:
                     print("DownSample failed for i =", camera_index)
                     return False
-                
-                cloud_i.transform(center_transform.astype(np.float64) @ current_transform[camera_index])
-                filename = "cloud_" + str(camera_index) + ".ply"
-                o3d.io.write_point_cloud(filename, cloud_i, write_ascii=True)
+                criteria = o3d.pipelines.registration.ICPConvergenceCriteria(1e-6, 1e-6, iter)  # ICP 收敛准则
+                lambda_geometric = 0.968  # 几何与颜色之间的权重系数
+                transform_estimate = o3d.pipelines.registration.TransformationEstimationForColoredICP(lambda_geometric)  # 变换估计器
+                result = o3d.pipelines.registration.registration_colored_icp(
+                    cloud_i,
+                    cloud_0,
+                    voxel_radius[stage],
+                    current_transform[camera_index],
+                    transform_estimate,
+                    criteria
+                )  # 进行有颜色信息的 ICP 配准
+                #todo:transformation_
+                # 从result中获取变换矩阵（它是一个Eigen矩阵）  
+                transformation_eigen = result.transformation  
 
+                # 将Eigen矩阵转换为NumPy数组（默认已经是double精度）  
+                transformation_np = np.asarray(transformation_eigen.data)  
 
-            voxel_radius = [0.04, 0.02, 0.01]  # 每个阶段的体素半径
-            max_iter = [50, 30, 14]  # 每个阶段的最大迭代次数
+                # 更新当前相机的变换矩阵（假设camera_index是一个有效的键）  
+                current_transform[camera_index] = transformation_np
 
-            for stage in range(3):
-                radius = voxel_radius[stage]  # 当前阶段的体素半径
-                iter = max_iter[stage]  # 当前阶段的最大迭代次数
-                print("voxel radius:", voxel_radius[stage], "Max iterations:", max_iter[stage])
-
-                cloud_0 = o3d.geometry.PointCloud()  # 创建点云对象 cloud_0
-                if not self.down_sample(cloud_0, radius, 0):  # 对 cloud_0 进行下采样
-                    print("DownSample failed for i=0")
-                    return False
-
-                for camera_index in range(1, camera_count):  # 遍历每个相机索引
-                    cloud_i = o3d.geometry.PointCloud()  # 创建点云对象 cloud_i
-                    if not self.down_sample(cloud_i, radius, camera_index):  # 对 cloud_i 进行下采样
-                        print("DownSample failed for i =", camera_index)
-                        return False
-
-                    criteria = o3d.pipelines.registration.ICPConvergenceCriteria(1e-6, 1e-6, iter)  # ICP 收敛准则
-                    lambda_geometric = 0.968  # 几何与颜色之间的权重系数
-                    transform_estimate = o3d.pipelines.registration.TransformationEstimationForColoredICP(lambda_geometric)  # 变换估计器
-
-                    result = o3d.pipelines.registration.registration_colored_icp(
-                        cloud_i,
-                        cloud_0,
-                        voxel_radius[stage],
-                        current_transform[camera_index],
-                        transform_estimate,
-                        criteria
-                    )  # 进行有颜色信息的 ICP 配准
-
-                    current_transform[camera_index] = result.transformation_.cast(np.double)  # 更新当前相机的变换矩阵
-
-                    print("===========================================================")
-                    print("Color ICP refinement for", camera_index, "-> 0")
-
-                    output[camera_index].set_from_matrix(center_transform * current_transform[camera_index].cast(float))  # 计算输出结果
+                # current_transform[camera_index] = result.transformation.cast(np.double)  # 更新当前相机的变换矩阵
+                print("===========================================================")
+                print("Color ICP refinement for", camera_index, "-> 0")
+                output[camera_index].set_from_matrix(center_transform * current_transform[camera_index].astype(float))  # 计算输出结果
             
-            for camera_index in range(camera_count):
-                cloud_i = o3d.geometry.PointCloud()
-                if not self.down_sample(cloud_i, 0.01, camera_index):
-                    print("DownSample failed for i =", camera_index)
-                    return False
+            
+        for camera_index in range(camera_count):
+            cloud_i = o3d.geometry.PointCloud()
+            cloud_i = self.down_sample(0.01, camera_index)
+            if cloud_i is None:
+                print("DownSample failed for i =", camera_index)
+                return False
 
-                cloud_transform = center_transform @ current_transform[camera_index].astype(np.float32)
-                cloud_i.transform(cloud_transform.astype(np.float64))
+            cloud_transform = center_transform @ current_transform[camera_index].astype(np.float32)
+            cloud_i.transform(cloud_transform.astype(np.float64))
 
-                filename = "icp_cloud_" + str(camera_index) + ".ply"
-                o3d.io.write_point_cloud(filename, cloud_i, write_ascii=True)
+            filename = "icp_cloud_" + str(camera_index) + ".ply"
+            o3d.io.write_point_cloud(filename, cloud_i, write_ascii=True)
 
-                print("Point cloud saved")
+            print("Point cloud saved")
 
-                t = np.eye(4, dtype=np.float32)
-                t[:3, :3] = cloud_transform[:3, :3]
+            t = np.eye(4, dtype=np.float32)
+            t[:3, :3] = cloud_transform[:3, :3]
 
-                # Transform to Depth camera coordinate
-                calibration = frames[camera_index].Calibration
-                r_depth = np.array(calibration.RotationFromDepth, dtype=np.float32).reshape(3, 3).T
-                t_depth = np.array(calibration.TranslationFromDepth, dtype=np.float32).reshape(3, 1) / 1000.0  # in meters
+            # Transform to Depth camera coordinate
+            calibration = frames[camera_index].Calibration
+            r_depth = np.array(calibration.RotationFromDepth, dtype=np.float32).reshape(3, 3).T
+            t_depth = np.array(calibration.TranslationFromDepth, dtype=np.float32).reshape(3, 1) / 1000.0  # in meters
+                
+            print("matmul debug3")
+            t[:3, :3] = np.matmul(t[:3, :3], r_depth)
+            t[:3, 3] = t[:3, 3] + np.matmul(r_depth, t_depth).flatten()
 
-                t[:3, :3] = np.matmul(t[:3, :3], r_depth)
-                t[:3, 3] = t[:3, 3] + np.matmul(r_depth, t_depth).flatten()
 
+            # Flip y and z for OpenGL coordinate system
+            yz_transform = np.eye(4, dtype=np.float32)
+            yz_transform[1, 1] = -1.0
+            yz_transform[2, 2] = -1.0
+            t = yz_transform @ t @ yz_transform
 
-                # Flip y and z for OpenGL coordinate system
-                yz_transform = np.eye(4, dtype=np.float32)
-                yz_transform[1, 1] = -1.0
-                yz_transform[2, 2] = -1.0
-                t = yz_transform @ t @ yz_transform
+            # Convert rotation matrix to quaternion
+            r = Rotation.from_matrix(t[:3, :3])
+            rotation_quat = r.as_quat()
 
-                # Convert rotation matrix to quaternion
-                r = Rotation.from_matrix(t[:3, :3])
-                rotation_quat = r.as_quat()
+            extrinsics_mat = {
+                "timeStamp":frames[camera_index].TimeStamp,
+                "translation": t[:3, 3].tolist(),
+                "rotation": rotation_quat.tolist()
+            }
 
-                extrinsics_mat = {
-                    "timeStamp":frames[camera_index].TimeStamp,
-                    "translation": t[:3, 3].tolist(),
-                    "rotation": rotation_quat.tolist()
-                }
+            # Save JSON file
+            dirname = os.path.dirname(frames[camera_index].filename)
+            folder_path = os.path.join(dirname, "ex_calib")
+            os.makedirs(folder_path, exist_ok=True)  # 创建ex_calib文件夹，如果已存在则不会重复创建
+            
+            path = os.path.join(folder_path, str(frames[camera_index].TimeStamp) + ".json")
+            with open(path, "w") as file:
+                json.dump(extrinsics_mat, file)
 
-                # Save JSON file
-                path = os.path.join(os.path.dirname(frames[camera_index].filename), "cn0" + str(camera_count - camera_index) + ".json")
-                with open(path, "w") as file:
-                    json.dump(extrinsics_mat, file)
-
-            print("===========================================================")
+        print("===========================================================")
                         
         return output
     

@@ -71,3 +71,9 @@ python kinfu.py --config configs/fr1_metallic_sphere.yaml --save_dir reconstruct
 ```cmd
 python kinfu_gui.py --config configs/fr1_desk.yaml
 ```
+
+main package used:
+
+```python
+pip install opencv-python pykinect_azure open3d pupil_apriltags imageio trimesh scikit-image
+```

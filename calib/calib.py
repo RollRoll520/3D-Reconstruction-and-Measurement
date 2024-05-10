@@ -6,12 +6,14 @@ import calib.calib_k4a as calib_k4a
 from pykinect_azure.k4a import _k4a as k4a
 
 
-def calib(mkv1_file_env,mkv2_file_env) -> int:
+def calib(mkv1_file_env,mkv2_file_env,concrete_path,doICP = True) -> int:
     filePaths:List[str] = [mkv1_file_env,
                            mkv2_file_env]
 
-
-    file_count = 2
+    if doICP:
+        file_count = 2
+    else:
+        file_count = 1
     master_found = False
     result = K4A_RESULT_SUCCEEDED
     initialize_libraries()
@@ -128,9 +130,9 @@ def calib(mkv1_file_env,mkv2_file_env) -> int:
                 # cv2.waitKey(0)
                 # cv2.destroyAllWindows()
 
-                extrinsics = extrinsicsCalib.calculate_extrinsics(frames)
-                if(len(extrinsics)==0):
-                    print(f"ERROR: Full registration failed")
+                extrinsics = extrinsicsCalib.calculate_extrinsics(frames,concrete_path,doICP)
+                if extrinsics is None:
+                    print(f"Debug: tag detection failure")
 
                 
             print("==========================================================================")

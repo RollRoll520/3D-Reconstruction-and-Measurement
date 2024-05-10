@@ -1,4 +1,5 @@
-import cv2
+import json
+import os
 from pykinect_azure import * 
 import calib.calib_extrinsic as calib_extrinsic
 from pykinect_azure.k4a import _k4a as k4a
@@ -184,3 +185,68 @@ def process_capture(file,frame):
     print()
 
     return frame
+
+def merge_data(directory_path):
+    imu_data = []
+    pose_data = []
+
+    # 遍历目录下的所有文件
+    imu_path = os.path.join(directory_path, 'imu')
+    pose_path = os.path.join(directory_path,'pose')
+    color_path = os.path.join(directory_path,'color')
+    depth_path = os.path.join(directory_path,'depth')
+
+    output_imu_file = os.path.join(directory_path, 'accelerometer.txt')
+    output_pose_file = os.path.join(directory_path, 'groundtruth.txt')
+    output_color_file = os.path.join(directory_path, 'rgb.txt')
+    output_depth_file = os.path.join(directory_path, 'depth.txt')
+
+    for filename in os.listdir(imu_path):
+        if filename.endswith(".json"):
+            file_path = os.path.join(imu_path, filename)
+            with open(file_path, "r") as file:
+                data = json.load(file)
+                imu_data.append(data)
+
+    # 将IMU数据写入输出文件
+    with open(output_imu_file, "w") as file:
+        for data in imu_data:
+            timestamp = data["timeStamp"]
+            accelerometer = data["accelerometer"]
+            line = f"{timestamp} {accelerometer[0]} {accelerometer[1]} {accelerometer[2]}\n"
+            file.write(line)
+
+    print("IMU data merged")
+
+    for filename in os.listdir(pose_path):
+        if filename.endswith(".json"):
+            file_path = os.path.join(pose_path, filename)
+            with open(file_path, "r") as file:
+                data = json.load(file)
+                pose_data.append(data)
+
+    # 将pose数据写入输出文件
+    with open(output_pose_file, "w") as file:
+        for data in pose_data:
+            timestamp = data["timeStamp"]
+            translation = data["translation"]
+            rotation = data["rotation"]
+            line = f"{timestamp} {translation[0][0]} {translation[1][0]} {translation[2][0]} {rotation[0]} {rotation[1]} {rotation[2]} {rotation[3]}\n"
+            file.write(line)
+    print("Pose data merged")
+
+    with open(output_color_file, 'w') as f:
+        for file_name in os.listdir(color_path):
+            if file_name.endswith('.jpg'):  # 仅处理以.png结尾的文件
+                timestamp = file_name.split('.')[0]  # 提取时间戳部分
+                line = f"{timestamp} color/{file_name}\n"
+                f.write(line)
+
+    with open(output_depth_file, 'w') as f:
+        for file_name in os.listdir(depth_path):
+            if file_name.endswith('.jpg'):  # 仅处理以.png结尾的文件
+                timestamp = file_name.split('.')[0]  # 提取时间戳部分
+                line = f"{timestamp} depth/{file_name}\n"
+                f.write(line)
+    print("File path data merged")
+    print("---------------")

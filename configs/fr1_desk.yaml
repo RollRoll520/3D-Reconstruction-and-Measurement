@@ -1,6 +1,6 @@
 data_root: "D:/Knowledge/Graduation_Design/WorkSpace/Py_WorkPlace/dataset/data/rgbd_dataset_freiburg1_desk"
 data_type: "fr1"
-near: 0.1
+near: 0.5
 far: 5.0
 vol_bounds: [-2.5, 2.0, -0.7, 2.7, -0.2, 2.0]
 voxel_size: 0.04

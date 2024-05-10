@@ -11,6 +11,7 @@ from scipy.spatial.transform import Rotation
 from cv2 import aruco
 import os
 
+
 #外参类型
 class CameraExtrinsics:
     def __init__(self):
@@ -166,7 +167,7 @@ class ExtrinsicsCalibration:
         return temp
 
 
-    def calculate_extrinsics(self, frames):
+    def calculate_extrinsics(self, frames,concrete_path,doICP = True):
         print("------Start Calculate Extrinsics------")
         output:List[AlignmentTransform] = []
         for i in range(len(frames)):
@@ -183,6 +184,7 @@ class ExtrinsicsCalibration:
         self.full_cloud = [None] * camera_count
         
         tag_poses = [None] * camera_count
+        tag_ids = [None] * camera_count
         current_transform = [None] * camera_count
         l = 0.38
 
@@ -204,8 +206,53 @@ class ExtrinsicsCalibration:
             if len(detections) != 0:
                 detection = detections[0]
                 print("Camera", camera_index, "detected marker ID:", detection.tag_id)
+                tag_ids[camera_index] = detection.tag_id
+
+                # 模式1，获取标定板之间的位姿
+                if detection.tag_id != 0:
+                    return None
+
+                # 模式2
+                # if camera_index!=0 and tag_ids[camera_index]!=tag_ids[0]:
+                #     return None
+
                 print("pose_R:\n",detection.pose_R)
                 print("pose_t:\n",detection.pose_t)
+
+                if doICP is False:
+                    save_color_path = os.path.join(concrete_path, 'color',f'{frames[0].TimeStamp}.jpg')
+                    save_depth_path = os.path.join(concrete_path, 'depth',f'{frames[0].TimeStamp}.jpg')
+                    save_imu_path = os.path.join(concrete_path, 'imu',f'{frames[0].TimeStamp}.json')
+                    save_pose_path = os.path.join(concrete_path, 'pose',f'{frames[0].TimeStamp}.json')
+                    
+
+                    # 保存图像
+                    color_image_bgr = cv2.cvtColor(frames[0].ColorImage, cv2.COLOR_RGBA2BGR)
+                    depth_image = np.array(frames[0].DepthImage, dtype=np.uint16)
+                    depth_mat = cv2.UMat(depth_image.reshape((calibration.Depth.Height,calibration.Depth.Width*2)))
+                    cv2.imwrite(save_color_path, color_image_bgr)
+                    cv2.imwrite(save_depth_path, depth_mat)
+
+                    imu_mat = {
+                        "timeStamp":frames[camera_index].TimeStamp,
+                        "accelerometer": frames[0].Accelerometer
+                    }
+
+                    pose_mat = {
+                        "timeStamp":frames[camera_index].TimeStamp,
+                        "translation": detection.pose_t.tolist(),
+                        "rotation": Rotation.from_matrix(detection.pose_R).as_quat().tolist()
+                    }
+
+                    with open(save_imu_path, "w") as file:
+                        json.dump(imu_mat, file)
+
+                    with open(save_pose_path, "w") as file:
+                        json.dump(pose_mat, file)
+                    
+                    print("Generate data finished :",frames[0].TimeStamp)
+                    print("---------------------")
+                    return output
 
                 if detection.tag_id == 1:  #todo:添加纠正
                     detection.pose_R = detection.pose_R
@@ -227,53 +274,12 @@ class ExtrinsicsCalibration:
                 tag_poses[camera_index] = transform
                 tag_pose = np.linalg.inv(tag_poses[0]) @ tag_poses[camera_index]  # 计算相对于第一个相机的标记姿态变换矩阵
                 current_transform[camera_index] = tag_pose.astype(np.float64)  # 转换为双精度矩阵
+                calibration.RotationFromDepth = detection.pose_R
+                calibration.TranslationFromDepth = detection.pose_t
                 found = True
-
-            if not found:
-                print("No AprilTag detected, trying ChArUco board")
-                markerIds = []  # 存储检测到的标记ID
-                markerCorners = []  # 存储每个标记的角点坐标
-                cv2.aruco.detectMarkers(gray,self.dictionary,markerCorners)
-                if len(markerIds) > 0:  # 如果检测到标记
-                    charucoCorners = []
-                    charucoIds = []
-                    # 相机内参矩阵
-                    camMatrix = np.array([[calibration.Color.fx, 0, calibration.Color.cx],
-                                          [0, calibration.Color.fy, calibration.Color.cy],
-                                          [0, 0, 1]], dtype=np.float32)
-                    # 相机畸变系数
-                    distCoeffs = np.array([[calibration.Color.k[0]], [calibration.Color.k[1]], [calibration.Color.p1],
-                                           [calibration.Color.p2], [calibration.Color.k[2]], [calibration.Color.k[3]],
-                                           [calibration.Color.k[4]], [calibration.Color.k[5]]], dtype=np.float32)  
-                    aruco.interpolateCornersCharuco(markerCorners, markerIds, gray, None, charucoCorners, charucoIds, camMatrix, distCoeffs)
-
-                    if len(charucoIds) > 0:  # 如果检测到Charuco角点
-                        rvec, tvec = cv2.aruco.estimatePoseCharucoBoard(charucoCorners, charucoIds, self.board, camMatrix, distCoeffs)
-                        if rvec is not None and tvec is not None:  # 如果估计的旋转向量和平移向量可用
-                            rmat, _ = cv2.Rodrigues(rvec)  # 旋转向量转换为旋转矩阵
-                            transform = np.identity(4, dtype=np.float32)  # 创建单位矩阵
-
-                            # 将旋转矩阵的值复制到transform矩阵中
-                            for row in range(3):
-                                for col in range(3):
-                                    transform[row, col] = rmat[row, col]
-
-                            # 将平移向量的值复制到transform矩阵中
-                            for row in range(3):
-                                transform[row, 3] = tvec[row]
-
-                            print("Pose:")
-                            print(transform)
-
-                            tag_poses[camera_index] = transform  # 存储标记的姿态变换矩阵
-                            tag_pose = np.linalg.inv(tag_poses[0]) @ tag_poses[camera_index]  # 计算相对于第一个相机的标记姿态变换矩阵
-                            current_transform[camera_index] = tag_pose.astype(np.float64)  # 转换为双精度矩阵
-                            found = True  # 设置标志表示找到了姿态
-
-            if not found:
-                print(f"Camera {camera_index} did not observe the fiducial marker - Waiting for the next frame")
-                return output
-            
+            else:
+                return None
+      
 
         M_PI_FLOAT = 3.14159265
         
@@ -355,6 +361,7 @@ class ExtrinsicsCalibration:
             for camera_index in range(1, camera_count):  # 遍历每个相机索引
                 cloud_i = o3d.geometry.PointCloud()  # 创建点云对象 cloud_i
                 cloud_i = self.down_sample(radius, camera_index)  # 对 cloud_i 进行下采样
+
                 if cloud_i is None:
                     print("DownSample failed for i =", camera_index)
                     return False
@@ -369,17 +376,18 @@ class ExtrinsicsCalibration:
                     transform_estimate,
                     criteria
                 )  # 进行有颜色信息的 ICP 配准
-                #todo:transformation_
+  
                 # 从result中获取变换矩阵（它是一个Eigen矩阵）  
                 transformation_eigen = result.transformation  
 
                 # 将Eigen矩阵转换为NumPy数组（默认已经是double精度）  
                 transformation_np = np.asarray(transformation_eigen.data)  
 
-                # 更新当前相机的变换矩阵（假设camera_index是一个有效的键）  
+                # 更新当前相机的变换矩阵
                 current_transform[camera_index] = transformation_np
+                print("current_transform for ",camera_index)
+                print(current_transform[camera_index])
 
-                # current_transform[camera_index] = result.transformation.cast(np.double)  # 更新当前相机的变换矩阵
                 print("===========================================================")
                 print("Color ICP refinement for", camera_index, "-> 0")
                 output[camera_index].set_from_matrix(center_transform * current_transform[camera_index].astype(float))  # 计算输出结果
@@ -395,10 +403,10 @@ class ExtrinsicsCalibration:
             cloud_transform = center_transform @ current_transform[camera_index].astype(np.float32)
             cloud_i.transform(cloud_transform.astype(np.float64))
 
-            filename = "icp_cloud_" + str(camera_index) + ".ply"
-            o3d.io.write_point_cloud(filename, cloud_i, write_ascii=True)
-
-            print("Point cloud saved")
+            # 需要时开启
+            # filename = "icp_cloud_" + str(camera_index) + ".ply"
+            # o3d.io.write_point_cloud(filename, cloud_i, write_ascii=True)
+            # print("Point cloud saved")
 
             t = np.eye(4, dtype=np.float32)
             t[:3, :3] = cloud_transform[:3, :3]
@@ -408,8 +416,7 @@ class ExtrinsicsCalibration:
             r_depth = np.array(calibration.RotationFromDepth, dtype=np.float32).reshape(3, 3).T
             t_depth = np.array(calibration.TranslationFromDepth, dtype=np.float32).reshape(3, 1) / 1000.0  # in meters
                 
-            print("matmul debug3")
-            t[:3, :3] = np.matmul(t[:3, :3], r_depth)
+            t[:3, :3] = np.matmul(r_depth,t[:3, :3])
             t[:3, 3] = t[:3, 3] + np.matmul(r_depth, t_depth).flatten()
 
 
@@ -423,6 +430,13 @@ class ExtrinsicsCalibration:
             r = Rotation.from_matrix(t[:3, :3])
             rotation_quat = r.as_quat()
 
+            print("Debug: #",camera_index)
+            print("center_transform:")
+            print(center_transform)
+            print("current_transform:")
+            print(current_transform[camera_index])
+            print("t:")
+            print(t)
             extrinsics_mat = {
                 "timeStamp":frames[camera_index].TimeStamp,
                 "translation": t[:3, 3].tolist(),

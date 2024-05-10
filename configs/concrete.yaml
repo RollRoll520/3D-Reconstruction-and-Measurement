@@ -1,0 +1,10 @@
+data_root: "D:/Knowledge/Graduation_Design/WorkSpace/Py_WorkPlace/dataset/data/concrete"
+data_type: "fr1"
+near: 0.01
+far: 8.0
+vol_bounds: [-5, 5., -5, 5, -5, 5]
+voxel_size: 0.025
+n_pyramids: 3
+n_iters: [6, 3, 3]
+dampings: [1.0e-4, 1.0e-4, 1.0e-2]
+n_steps: 192

@@ -6,7 +6,7 @@ import calib.calib_k4a as calib_k4a
 from pykinect_azure.k4a import _k4a as k4a
 
 
-def calib(mkv1_file_env,mkv2_file_env,concrete_path,doICP = True) -> int:
+def calib(mkv1_file_env,mkv2_file_env,concrete_path,doICP = True,doPoseTransform = False) -> int:
     filePaths:List[str] = [mkv1_file_env,
                            mkv2_file_env]
 
@@ -17,6 +17,7 @@ def calib(mkv1_file_env,mkv2_file_env,concrete_path,doICP = True) -> int:
     master_found = False
     result = K4A_RESULT_SUCCEEDED
     initialize_libraries()
+    cur_frame = 0
 
     # Allocate memory to store the state of N recordings.
     files = [calib_k4a.Recording() for _ in range(file_count)]
@@ -73,6 +74,7 @@ def calib(mkv1_file_env,mkv2_file_env,concrete_path,doICP = True) -> int:
             for j in range(30-i):
                 # 跳过30帧
                 stream_result,files[i].capture = playbacks[i].get_next_capture()
+                cur_frame += 1
 
                 if not stream_result:
                     print(f"ERROR: Recording file is empty: {files[i].filename}")
@@ -98,6 +100,9 @@ def calib(mkv1_file_env,mkv2_file_env,concrete_path,doICP = True) -> int:
                 # Find the lowest timestamp out of each of the current captures.
                 for i in range(file_count):
                     stream_result,files[i].capture = playbacks[i].get_next_capture()
+                    cur_frame += 1
+                    if cur_frame > 901:
+                        break
                     if stream_result:
                         min_file = files[i]
                         calib_k4a.process_capture(min_file,frames[i])
@@ -130,9 +135,13 @@ def calib(mkv1_file_env,mkv2_file_env,concrete_path,doICP = True) -> int:
                 # cv2.waitKey(0)
                 # cv2.destroyAllWindows()
 
-                extrinsics = extrinsicsCalib.calculate_extrinsics(frames,concrete_path,doICP)
+                extrinsics = extrinsicsCalib.calculate_extrinsics(frames,concrete_path,cur_frame,doICP,doPoseTransform)
                 if extrinsics is None:
                     print(f"Debug: tag detection failure")
+                
+                if doPoseTransform and extrinsics == -1:
+                    print("pose transform calculated")
+                    return 
 
                 
             print("==========================================================================")

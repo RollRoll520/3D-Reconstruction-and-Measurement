@@ -165,9 +165,34 @@ class ExtrinsicsCalibration:
         temp.orient_normals_towards_camera_location(np.array([0, 0, 0]))
         print("------VoxelDownSample Finished------")   
         return temp
+    
+    def calculate_pose_transform(self,save_transform_path,detections):
+        pose_mat = [None]*4
+        transform_pose = [None]*4
+        for i in range(0,4):
+            pose_mat[i] = np.eye(4)
+            pose_mat[i][:3, :3] = detections[i].pose_R
+            pose_mat[i][:3, 3] = detections[i].pose_t[:, 0]
+            print(pose_mat[i])
+
+        transform_pose[0] = np.eye(4)
+        print(transform_pose[0])
+        for i in range(1,4):
+            transform_pose[i] = np.linalg.inv(pose_mat[0]) @ pose_mat[i]
+            print(f"pose transform to 0 from {i} :")
+            print(transform_pose[i]) 
+
+        # 将转换矩阵写入JSON文件
+        json_data = {'transform_pose': []}
+
+        for i in range(4):
+            json_data['transform_pose'].append(transform_pose[i].tolist())
+
+        with open(save_transform_path, 'w') as json_file:
+            json.dump(json_data, json_file)   
 
 
-    def calculate_extrinsics(self, frames,concrete_path,doICP = True):
+    def calculate_extrinsics(self, frames,concrete_path,cur_frame,doICP = True,doPoseTransform = False):
         print("------Start Calculate Extrinsics------")
         output:List[AlignmentTransform] = []
         for i in range(len(frames)):
@@ -195,11 +220,10 @@ class ExtrinsicsCalibration:
             gray = cv2.cvtColor(color_image, cv2.COLOR_BGR2GRAY)
 
             intrinsics = frames[camera_index].Calibration.Color
-            tag_size = 0.1
+            tag_size = 0.162
             detections = self.tag_detector.detect(gray,True,[intrinsics.fx,intrinsics.fy,intrinsics.cx,intrinsics.cx],tag_size)
 
             print("Detected", len(detections), "fiducial markers")
-            found = False
             calibration = frames[camera_index].Calibration
 
             #apriltag
@@ -208,40 +232,55 @@ class ExtrinsicsCalibration:
                 print("Camera", camera_index, "detected marker ID:", detection.tag_id)
                 tag_ids[camera_index] = detection.tag_id
 
-                # 模式1，获取标定板之间的位姿
-                if detection.tag_id != 0:
+                if doPoseTransform and detection.tag_id != 0:
+                # if detection.tag_id != 0:
                     return None
-
-                # 模式2
-                # if camera_index!=0 and tag_ids[camera_index]!=tag_ids[0]:
-                #     return None
 
                 print("pose_R:\n",detection.pose_R)
                 print("pose_t:\n",detection.pose_t)
+                
+                save_transform_path = os.path.join(concrete_path,'transform_pose.json')
+                # 将所有标定板的位姿转换为相对于标定板A的位姿
+                if doPoseTransform and len(detections) == 4:
+                    self.calculate_pose_transform(save_transform_path,detections)
+                    return -1  
+
+                # 从JSON文件中读取转换矩阵数据
+                with open(save_transform_path, 'r') as json_file:
+                    json_data = json.load(json_file)
+
+                transform_pose = []
+
+                for i in range(4):
+                    transform_pose.append(np.array(json_data['transform_pose'][i]))
+
+                transform = np.identity(4, dtype=np.float32)  # 创建单位矩阵
+                for row in range(3):                          # 将旋转矩阵的值复制到transform矩阵中
+                    for col in range(3):
+                        transform[row, col] = detection.pose_R[row, col]                
+                for row in range(3):                          # 将平移向量的值复制到transform矩阵中
+                    transform[row, 3] = detection.pose_t[row]
+                print("Pose:\n",transform)
+
+                tag_poses[camera_index] = transform
+                # tag_pose = tag_pose[0]
+                tag_pose = tag_poses[0] @ transform_pose[detection.tag_id] # 计算相对于第一个相机的标记姿态变换矩阵       
+                print("Justified Pose:\n",tag_pose)
 
                 if doICP is False:
-                    save_color_path = os.path.join(concrete_path, 'color',f'{frames[0].TimeStamp}.jpg')
-                    save_depth_path = os.path.join(concrete_path, 'depth',f'{frames[0].TimeStamp}.jpg')
                     save_imu_path = os.path.join(concrete_path, 'imu',f'{frames[0].TimeStamp}.json')
                     save_pose_path = os.path.join(concrete_path, 'pose',f'{frames[0].TimeStamp}.json')
                     
-
-                    # 保存图像
-                    color_image_bgr = cv2.cvtColor(frames[0].ColorImage, cv2.COLOR_RGBA2BGR)
-                    depth_image = np.array(frames[0].DepthImage, dtype=np.uint16)
-                    depth_mat = cv2.UMat(depth_image.reshape((calibration.Depth.Height,calibration.Depth.Width*2)))
-                    cv2.imwrite(save_color_path, color_image_bgr)
-                    cv2.imwrite(save_depth_path, depth_mat)
-
                     imu_mat = {
                         "timeStamp":frames[camera_index].TimeStamp,
                         "accelerometer": frames[0].Accelerometer
                     }
 
                     pose_mat = {
+                        "curFrame":str(cur_frame).zfill(4),
                         "timeStamp":frames[camera_index].TimeStamp,
-                        "translation": detection.pose_t.tolist(),
-                        "rotation": Rotation.from_matrix(detection.pose_R).as_quat().tolist()
+                        "translation": tag_pose[:3, 3].tolist(),
+                        "rotation": Rotation.from_matrix(tag_pose[:3,:3]).as_quat().tolist()
                     }
 
                     with open(save_imu_path, "w") as file:
@@ -254,25 +293,6 @@ class ExtrinsicsCalibration:
                     print("---------------------")
                     return output
 
-                if detection.tag_id == 1:  #todo:添加纠正
-                    detection.pose_R = detection.pose_R
-                    detection.pose_t = detection.pose_t
-                elif detection.tag_id == 2:
-                    detection.pose_R = detection.pose_R
-                    detection.pose_t = detection.pose_t
-                elif detection.tag_id == 3:
-                    detection.pose_R = detection.pose_R
-                    detection.pose_t = detection.pose_t
-
-                transform = np.identity(4, dtype=np.float32)  # 创建单位矩阵
-                for row in range(3):                          # 将旋转矩阵的值复制到transform矩阵中
-                    for col in range(3):
-                        transform[row, col] = detection.pose_R[row, col]                
-                for row in range(3):                          # 将平移向量的值复制到transform矩阵中
-                    transform[row, 3] = detection.pose_t[row]
-                print("Pose:\n",transform)
-                tag_poses[camera_index] = transform
-                tag_pose = np.linalg.inv(tag_poses[0]) @ tag_poses[camera_index]  # 计算相对于第一个相机的标记姿态变换矩阵
                 current_transform[camera_index] = tag_pose.astype(np.float64)  # 转换为双精度矩阵
                 calibration.RotationFromDepth = detection.pose_R
                 calibration.TranslationFromDepth = detection.pose_t
@@ -437,20 +457,30 @@ class ExtrinsicsCalibration:
             print(current_transform[camera_index])
             print("t:")
             print(t)
-            extrinsics_mat = {
+
+            save_color_path = os.path.join(concrete_path, 'color',f'{frames[0].TimeStamp}.png')
+            save_imu_path = os.path.join(concrete_path, 'imu',f'{frames[0].TimeStamp}.json')
+            save_pose_path = os.path.join(concrete_path, 'pose',f'{frames[0].TimeStamp}.json')
+            
+            # 保存图像
+            color_image_bgr = cv2.cvtColor(frames[0].ColorImage, cv2.COLOR_RGBA2BGR)
+            cv2.imwrite(save_color_path, color_image_bgr)
+            imu_mat = {
+                "timeStamp":frames[camera_index].TimeStamp,
+                "accelerometer": frames[0].Accelerometer
+            }
+            pose_mat = {
+                "curFrame":str(cur_frame).zfill(4),
                 "timeStamp":frames[camera_index].TimeStamp,
                 "translation": t[:3, 3].tolist(),
                 "rotation": rotation_quat.tolist()
             }
-
-            # Save JSON file
-            dirname = os.path.dirname(frames[camera_index].filename)
-            folder_path = os.path.join(dirname, "ex_calib")
-            os.makedirs(folder_path, exist_ok=True)  # 创建ex_calib文件夹，如果已存在则不会重复创建
+            with open(save_imu_path, "w") as file:
+                json.dump(imu_mat, file)
+            with open(save_pose_path, "w") as file:
+                json.dump(pose_mat, file)
             
-            path = os.path.join(folder_path, str(frames[camera_index].TimeStamp) + ".json")
-            with open(path, "w") as file:
-                json.dump(extrinsics_mat, file)
+            print("Generate data finished :",frames[0].TimeStamp)
 
         print("===========================================================")
                         

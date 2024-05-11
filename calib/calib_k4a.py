@@ -193,8 +193,6 @@ def merge_data(directory_path):
     # 遍历目录下的所有文件
     imu_path = os.path.join(directory_path, 'imu')
     pose_path = os.path.join(directory_path,'pose')
-    color_path = os.path.join(directory_path,'color')
-    depth_path = os.path.join(directory_path,'depth')
 
     output_imu_file = os.path.join(directory_path, 'accelerometer.txt')
     output_pose_file = os.path.join(directory_path, 'groundtruth.txt')
@@ -231,22 +229,23 @@ def merge_data(directory_path):
             timestamp = data["timeStamp"]
             translation = data["translation"]
             rotation = data["rotation"]
-            line = f"{timestamp} {translation[0][0]} {translation[1][0]} {translation[2][0]} {rotation[0]} {rotation[1]} {rotation[2]} {rotation[3]}\n"
+            line = f"{timestamp} {translation[0]} {translation[1]} {translation[2]} {rotation[0]} {rotation[1]} {rotation[2]} {rotation[3]}\n"
             file.write(line)
     print("Pose data merged")
 
     with open(output_color_file, 'w') as f:
-        for file_name in os.listdir(color_path):
-            if file_name.endswith('.jpg'):  # 仅处理以.png结尾的文件
-                timestamp = file_name.split('.')[0]  # 提取时间戳部分
-                line = f"{timestamp} color/{file_name}\n"
-                f.write(line)
+        for data in pose_data:
+            depth_name = data["curFrame"]
+            timestamp = data["timeStamp"]
+            line = f"{timestamp} color/color{depth_name}.png\n"
+            f.write(line)
 
     with open(output_depth_file, 'w') as f:
-        for file_name in os.listdir(depth_path):
-            if file_name.endswith('.jpg'):  # 仅处理以.png结尾的文件
-                timestamp = file_name.split('.')[0]  # 提取时间戳部分
-                line = f"{timestamp} depth/{file_name}\n"
-                f.write(line)
+        for data in pose_data:
+            depth_name = data["curFrame"]
+            timestamp = data["timeStamp"]
+            line = f"{timestamp} depth/depth{depth_name}.png\n"
+            f.write(line)
+
     print("File path data merged")
     print("---------------")

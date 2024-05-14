@@ -178,7 +178,7 @@ class ExtrinsicsCalibration:
         transform_pose[0] = np.eye(4)
         print(transform_pose[0])
         for i in range(1,4):
-            transform_pose[i] = np.linalg.inv(pose_mat[0]) @ pose_mat[i]
+            transform_pose[i] = np.linalg.inv(pose_mat[i]) @ pose_mat[0]
             print(f"pose transform to 0 from {i} :")
             print(transform_pose[i]) 
 
@@ -263,7 +263,7 @@ class ExtrinsicsCalibration:
                 print("Pose:\n",transform)
 
                 tag_poses[camera_index] = transform
-                # tag_pose = tag_pose[0]
+                # tag_pose = tag_poses[0]
                 tag_pose = tag_poses[0] @ transform_pose[detection.tag_id] # 计算相对于第一个相机的标记姿态变换矩阵       
                 print("Justified Pose:\n",tag_pose)
 

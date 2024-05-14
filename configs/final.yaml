@@ -1,5 +1,5 @@
 data_root: "D:/Knowledge/Graduation_Design/WorkSpace/Py_WorkPlace/dataset/data/final"
-data_type: "fr1"
+data_type: "custom"
 near: 0.01
 far: 5.0
 vol_bounds: [-5, 5., -5, 5, -5, 5]

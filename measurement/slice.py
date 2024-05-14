@@ -132,33 +132,60 @@ def slice_ply(filename,slice_height,slice_thickness):
 
 
 #可视化测试接口，！NOT REMOTE
-def test_slice(filename,slice_height,slice_thickness):
-    validated_points_left,validated_points_right,merged_lines,intersection_points = slice_ply(filename,slice_height,slice_thickness)
+def test_slice(filename,slice_thickness):
+    point_cloud = o3d.io.read_point_cloud(filename)
 
-    # 可视化切片后的点云
-    intersection_cloud = o3d.geometry.PointCloud()
-    validated_cloud_left = o3d.geometry.PointCloud()
-    validated_cloud_right = o3d.geometry.PointCloud()
-    intersection_cloud.points = o3d.utility.Vector3dVector(intersection_points)
-    validated_cloud_left.points = o3d.utility.Vector3dVector(validated_points_left)
-    validated_cloud_right.points = o3d.utility.Vector3dVector(validated_points_right)
+    min_height = np.min(np.asarray(point_cloud.points)[:, 2])
+    max_height = np.max(np.asarray(point_cloud.points)[:, 2])
 
-    intersection_cloud_size = len(intersection_points)
-    left_cloud_size = len(validated_points_left)
-    right_cloud_size = len(validated_points_right)
+    slice_heights = np.arange(min_height, max_height, slice_thickness)  # 根据给定的切片厚度计算切片高度
 
-    print("Intersection Cloud size:", intersection_cloud_size)
-    print("Left Cloud size:", left_cloud_size)
-    print("Right Cloud size:", right_cloud_size)
-
+    merged_lines = o3d.geometry.LineSet()
     spheres = o3d.geometry.TriangleMesh()
-    for point in intersection_cloud.points:
-        sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.005)
-        sphere.translate(point)
-        spheres += sphere
-    validated_cloud_left.paint_uniform_color([0, 1, 0]) 
-    validated_cloud_right.paint_uniform_color([0, 0, 1]) 
-    intersection_cloud.paint_uniform_color([0, 0, 0])  
-    merged_lines.paint_uniform_color([1,0,0])
-    # o3d.visualization.draw_geometries([merged_lines,validated_cloud_left,validated_cloud_right])
+
+    for slice_height in slice_heights:
+        validated_points_left, validated_points_right, lines, intersection_points = slice_ply(filename, slice_height, slice_thickness)
+
+        # 添加当前切片的连接线段和交点
+        merged_lines += lines
+
+        for point in intersection_points:
+            sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.005)
+            sphere.translate(point)
+            spheres += sphere
+
+    # 可视化结果
+    spheres.paint_uniform_color([0, 0, 0])
+    merged_lines.paint_uniform_color([1, 0, 0])
+
     o3d.visualization.draw_geometries([spheres])
+
+    # validated_points_left,validated_points_right,merged_lines,intersection_points = slice_ply(filename,slice_height,slice_thickness)
+
+    # # 可视化切片后的点云
+    # intersection_cloud = o3d.geometry.PointCloud()
+    # validated_cloud_left = o3d.geometry.PointCloud()
+    # validated_cloud_right = o3d.geometry.PointCloud()
+    # intersection_cloud.points = o3d.utility.Vector3dVector(intersection_points)
+    # validated_cloud_left.points = o3d.utility.Vector3dVector(validated_points_left)
+    # validated_cloud_right.points = o3d.utility.Vector3dVector(validated_points_right)
+
+    # intersection_cloud_size = len(intersection_points)
+    # left_cloud_size = len(validated_points_left)
+    # right_cloud_size = len(validated_points_right)
+
+    # print("Intersection Cloud size:", intersection_cloud_size)
+    # print("Left Cloud size:", left_cloud_size)
+    # print("Right Cloud size:", right_cloud_size)
+
+    # spheres = o3d.geometry.TriangleMesh()
+    # for point in intersection_cloud.points:
+    #     sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.005)
+    #     sphere.translate(point)
+    #     spheres += sphere
+    # validated_cloud_left.paint_uniform_color([0, 1, 0]) 
+    # validated_cloud_right.paint_uniform_color([0, 0, 1]) 
+    # intersection_cloud.paint_uniform_color([0, 0, 0])  
+    # merged_lines.paint_uniform_color([1,0,0])
+    # # o3d.visualization.draw_geometries([merged_lines,validated_cloud_left,validated_cloud_right])
+    # o3d.visualization.draw_geometries([spheres])
